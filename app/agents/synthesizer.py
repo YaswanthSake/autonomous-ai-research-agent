@@ -1,37 +1,51 @@
 
+import re
+
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.state import ResearchState
 from app.agents.llm import llm
 from app.agents.model_utils import invoke_llm_with_retry
+from app.agents.citation_utils import (
+    validate_citations,
+    generate_source_references,
+)
 
 
 def synthesizer_node(state: ResearchState) -> dict:
     """
-    Analyze all collected web search results in one Gemini call
-    and generate a consolidated research report.
+    Analyze collected research and generate a report
+    with validated references.
     """
 
     print("\nStarting final research synthesis...")
 
-    # Step 1: Prepare all collected research evidence
     research_material = []
+    source_registry = {}
+    source_number = 1
 
+    # Step 1: Assign unique IDs to collected sources
     for finding in state["research_findings"]:
+
         research_material.append(
             f"\nResearch task: {finding['task']}\n"
-            f"Sources:\n"
         )
 
         for source in finding["sources"]:
+
+            source_id = f"S{source_number}"
+            source_registry[source_id] = source
+
             research_material.append(
                 f"""
+Source ID: [{source_id}]
 Title: {source.get('title', '')}
 URL: {source.get('url', '')}
 Content: {source.get('content', '')[:2000]}
-Relevance score: {source.get('score', 0.0)}
 """
             )
+
+            source_number += 1
 
     combined_research = "\n".join(research_material)
 
@@ -40,14 +54,14 @@ Relevance score: {source.get('score', 0.0)}
         SystemMessage(
             content=(
                 "You are an expert research analyst. "
-                "Produce a detailed, well-structured research report "
-                "using the supplied web search evidence. "
-                "Organize the report with clear headings. "
-                "Compare findings across sources where useful. "
-                "Distinguish established facts from uncertainty. "
-                "Include source URLs alongside relevant claims. "
-                "Never invent facts, statistics, or sources. "
-                "If evidence is insufficient, explicitly say so."
+                "Create a detailed and structured research report. "
+                "Use only the supplied research evidence. "
+                "Cite factual claims using the provided source IDs, "
+                "for example [S1] or [S2]. "
+                "Never invent source IDs, URLs, statistics, or facts. "
+                "If evidence is insufficient, explicitly state so. "
+                "Do not create a separate bibliography; the application "
+                "will generate the source list."
             )
         ),
         HumanMessage(
@@ -55,14 +69,14 @@ Relevance score: {source.get('score', 0.0)}
                 f"Research topic: {state['topic']}\n\n"
                 f"Research plan:\n"
                 f"{chr(10).join(state['research_plan'])}\n\n"
-                f"Collected web research:\n"
+                f"Collected research evidence:\n"
                 f"{combined_research}\n\n"
-                "Create one consolidated research report."
+                "Produce a consolidated research report with clear headings."
             )
         ),
     ]
 
-    # Step 3: Make one Gemini call for the complete analysis
+    # Step 3: Generate the report with one Gemini call
     response = invoke_llm_with_retry(llm, messages)
 
     content = response.content
@@ -77,9 +91,21 @@ Relevance score: {source.get('score', 0.0)}
     else:
         final_report = str(content)
 
-    print("Final research synthesis completed.")
+    # Step 4: Validate citation IDs
+    cited_ids = validate_citations(
+        final_report,
+        source_registry,
+    )
 
-    # Step 4: Return the completed report
+    # Step 5: Generate verified source references
+    final_report += generate_source_references(
+        cited_ids,
+        source_registry,
+    )
+
+    print("Final research synthesis completed.")
+    print(f"Validated citations: {len(cited_ids)}")
+
     return {
         "final_report": final_report,
         "status": "completed",
