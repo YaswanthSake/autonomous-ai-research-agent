@@ -13,9 +13,25 @@ class ResearchRequest(BaseModel):
         min_length=3,
         max_length=500,
         description="The research topic provided by the user",
-    )
+    ) 
 
+# Describes one webpage
+class ResearchSource(BaseModel):
+    title: str
+    url: str
+    content: str
+    score: float
+
+# Describes one research task's result
+class ResearchFinding(BaseModel):
+    task: str
+    summary: str
+    sources: list[ResearchSource]
+
+# Describes the complete API response
 class ResearchResponse(BaseModel):
     topic: str
     research_plan: list[str]
+    research_findings: list[ResearchFinding]
+    final_report: str
     status: str

@@ -27,6 +27,8 @@ async def create_research_plan(request: ResearchRequest):
     initial_state = {
         "topic": request.topic,
         "research_plan": [],
+        "research_findings": [],
+        "final_report": "",
         "status": "pending",
     }
 
@@ -35,5 +37,7 @@ async def create_research_plan(request: ResearchRequest):
     return ResearchResponse(
         topic=result["topic"],
         research_plan=result["research_plan"],
+        research_findings=result["research_findings"],
+        final_report=result["final_report"],
         status=result["status"],
     )

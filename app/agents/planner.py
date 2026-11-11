@@ -1,24 +1,45 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from tenacity import retry, stop_after_attempt, wait_exponential
+from app.agents.llm import llm
 
-from app.core.config import GOOGLE_API_KEY, GEMINI_MODEL
+from app.agents.model_utils import invoke_llm_with_retry
 from app.agents.state import ResearchState
 
 
-llm = ChatGoogleGenerativeAI(
-    model=GEMINI_MODEL,
-    google_api_key=GOOGLE_API_KEY,
-    temperature=0,
-)
+# llm = ChatGoogleGenerativeAI(
+#     model=GEMINI_MODEL,
+#     google_api_key=GOOGLE_API_KEY,
+#     temperature=0,
+# )
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=2, min=2, max=10),
-    reraise=True,
-)
-def generate_research_plan(messages):
-    return llm.invoke(messages)
+def should_retry(exception):
+    """
+    Retry only temporary errors.
+    Do not retry quota or billing errors.
+    """
+
+    error_message = str(exception).lower()
+
+    # Stop immediately for quota and billing errors
+    if "429" in error_message or "resource_exhausted" in error_message:
+        return False
+
+    if "402" in error_message or "payment required" in error_message:
+        return False
+
+    # Retry temporary server and network errors
+    if any(code in error_message for code in ["503", "504", "500"]):
+        return True
+
+    if any(
+        keyword in error_message
+        for keyword in ["timeout", "timed out", "connection error"]
+    ):
+        return True
+
+    # Do not retry unknown errors
+    return False
+
+
 
 def planner_node(state: ResearchState) -> dict:
     """
@@ -42,7 +63,7 @@ def planner_node(state: ResearchState) -> dict:
     ]
 
     # response = llm.invoke(messages)
-    response = generate_research_plan(messages)
+    response = invoke_llm_with_retry(llm, messages)
 
     content = response.content
 
@@ -60,7 +81,7 @@ def planner_node(state: ResearchState) -> dict:
         for line in text_content.splitlines()
         if line.strip()
     ]
-
+    # print("Plan:", plan)
     return {
         "research_plan": plan,
         "status": "planned",
