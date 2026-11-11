@@ -1,42 +1,38 @@
 
 from app.agents.state import ResearchState, ResearchFinding
 from app.agents.search import search_web
+from app.agents.source_utils import filter_and_deduplicate_sources
 
 
 def researcher_node(state: ResearchState) -> dict:
     """
-    Execute web searches for every research task and collect structured sources.
-    Gemini is intentionally not called in this node.
+    Search the web, filter weak results, and remove duplicate URLs.
     """
 
     findings: list[ResearchFinding] = []
+    seen_urls: set[str] = set()
 
     for task in state["research_plan"]:
 
         print(f"\nStarting research task: {task}")
 
-        # Step 1: Search the web using Tavily
         search_results = search_web(task)
 
         print(f"Search completed for: {task}")
 
-        # Step 2: Extract source information
-        sources = []
+        sources = filter_and_deduplicate_sources(
+            results=search_results.get("results", []),
+            seen_urls=seen_urls,
+            min_score=0.3,
+        )
 
-        for result in search_results.get("results", []):
-            sources.append({
-                "title": result.get("title", ""),
-                "url": result.get("url", ""),
-                "content": result.get("content", ""),
-                "score": result.get("score", 0.0),
-            })
-
-        # Step 3: Store search results without Gemini analysis
         findings.append({
             "task": task,
-            "summary": "Search results collected. Pending final analysis.",
+            "summary": "Search results collected and filtered.",
             "sources": sources,
         })
+
+        print(f"Accepted {len(sources)} sources for: {task}")
 
     print("\nAll research searches completed.")
 
